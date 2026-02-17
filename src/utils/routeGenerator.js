@@ -1,7 +1,9 @@
 import { getDistance } from "geolib";
 import { snapToRoad } from "./snapToRoad";
+import { getBaseLocation } from "./baseLocation";
 
-const BASE = { lat: 13.0827, lng: 80.2707 };
+
+const BASE = getBaseLocation();
 
 function distanceKm(a, b) {
   return getDistance(

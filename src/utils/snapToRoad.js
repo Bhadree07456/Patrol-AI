@@ -1,4 +1,5 @@
-const BASE = { lat: 13.0827, lng: 80.2707 };
+import { getBaseLocation } from "./baseLocation";
+const BASE = getBaseLocation();
 
 export async function snapToRoad(point) {
 

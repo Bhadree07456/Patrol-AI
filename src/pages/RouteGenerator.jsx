@@ -1,46 +1,68 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Circle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-// Professional UI Icons
-import { 
-  ShieldAlert, 
-  Navigation, 
-  Settings2, 
-  Activity, 
-  Layers, 
-  Map as MapIcon, 
-  Cloud, 
-  Moon, 
-  Sun 
+
+import {
+  ShieldAlert,
+  Settings2,
+  Activity,
+  Map as MapIcon,
+  Cloud,
+  Moon,
+  Sun
 } from "lucide-react";
 
-import zones from "../data/riskZones.json";
+import defaultZones from "../data/riskZones.json";
 import { generateSmartRoute } from "../utils/routeGenerator";
 import { getRoadRoute } from "../utils/roadRouteService";
+import { getBaseLocation, subscribeBase } from "../utils/baseLocation";
 
-/* ---------------- CUSTOM MODERN MARKERS ---------------- */
-// Uses CSS-based DivIcons for high-resolution rendering
-const createCustomIcon = (color, shadowColor) => new L.divIcon({
-  className: "custom-marker",
-  html: `
-    <div style="
-      background-color: ${color};
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      border: 2px solid white;
-      box-shadow: 0 0 8px ${shadowColor};
+
+/* ---------------- LOAD SHARED ZONES ---------------- */
+
+function useSharedZones() {
+  const [zones, setZones] = useState(() => {
+    const saved = localStorage.getItem("riskZones");
+    return saved ? JSON.parse(saved) : defaultZones;
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      const saved = localStorage.getItem("riskZones");
+      if (saved) setZones(JSON.parse(saved));
+    };
+
+    window.addEventListener("storage", sync);
+    sync();
+
+    return () => window.removeEventListener("storage", sync);
+  }, []);
+
+  return zones;
+}
+
+/* ---------------- CUSTOM MARKERS ---------------- */
+
+const createCustomIcon = (color, shadowColor) =>
+  new L.divIcon({
+    className: "custom-marker",
+    html: `<div style="
+      background:${color};
+      width:14px;height:14px;border-radius:50%;
+      border:2px solid white;
+      box-shadow:0 0 8px ${shadowColor};
     "></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
-});
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
 
-const highRiskIcon = createCustomIcon("#ef4444", "rgba(239, 68, 68, 0.6)"); // Red
-const routineIcon = createCustomIcon("#3b82f6", "rgba(59, 130, 246, 0.6)"); // Blue
-const baseIcon = createCustomIcon("#10b981", "rgba(16, 185, 129, 0.6)");    // Emerald
+const highRiskIcon = createCustomIcon("#ef4444", "rgba(239,68,68,.6)");
+const routineIcon = createCustomIcon("#3b82f6", "rgba(59,130,246,.6)");
+const baseIcon = createCustomIcon("#10b981", "rgba(16,185,129,.6)");
 
-/* ---------------- MAP THEME CONFIGURATION ---------------- */
+/* ---------------- MAP THEMES ---------------- */
+
 const MAP_THEMES = {
   light: {
     name: "Clean",
@@ -68,16 +90,41 @@ const MAP_THEMES = {
   }
 };
 
+/* ---------------- MAIN COMPONENT ---------------- */
+
 export default function RouteGenerator() {
-  const BASE = [13.0827, 80.2707];
-  
-  // State
+
+  const zones = useSharedZones(); // 🔥 dynamic zones
+
   const [kmLimit, setKmLimit] = useState(20);
   const [radius, setRadius] = useState(10);
   const [routeData, setRouteData] = useState(null);
   const [selectedZones, setSelectedZones] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTheme, setActiveTheme] = useState("light");
+
+  const [base, setBase] = useState(getBaseLocation());
+  const BASE_COORDS = [base.lat, base.lng];
+
+
+  useEffect(() => {
+    const unsubscribe = subscribeBase(() => {
+      setBase(getBaseLocation());
+
+      // reset route when HQ changes
+      setRouteData(null);
+      setSelectedZones([]);
+    });
+
+    return unsubscribe;
+  }, []);
+
+
+  /* Clear old routes if zones change */
+  useEffect(() => {
+    setRouteData(null);
+    setSelectedZones([]);
+  }, [zones]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -87,7 +134,7 @@ export default function RouteGenerator() {
       let finalRouteData = forced;
       if (forced.totalDistance > kmLimit + 5) {
         const choice = window.confirm(
-          "Warning: High-risk coverage exceeds distance limit.\n\nOK: Prioritize Safety\nCancel: Prioritize KM Limit"
+          "High-risk coverage exceeds distance.\nOK = Prioritize Safety\nCancel = Limit Distance"
         );
         finalRouteData = await generateSmartRoute(zones, kmLimit, 5, radius, choice);
       }
@@ -95,8 +142,7 @@ export default function RouteGenerator() {
       setSelectedZones(finalRouteData.route);
       const road = await getRoadRoute(finalRouteData.route);
       setRouteData(road);
-    } catch (error) {
-      console.error("Route generation failed", error);
+
     } finally {
       setLoading(false);
     }
@@ -110,9 +156,9 @@ export default function RouteGenerator() {
         <div className="p-6 border-b border-slate-100 bg-slate-900 text-white">
           <div className="flex items-center gap-2">
             <ShieldAlert className="text-blue-400" size={24} />
-            <h1 className="text-xl font-bold tracking-tight">Sentinel Path</h1>
+            <h1 className="text-xl font-bold tracking-tight">TNSPS</h1>
           </div>
-          <p className="text-slate-400 text-[10px] uppercase tracking-widest mt-1 font-semibold">Security Operations Center</p>
+          <p className="text-slate-400 text-[10px] uppercase tracking-widest mt-1 font-semibold">Generate Route For Today</p>
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto space-y-8 text-slate-600">
@@ -199,19 +245,29 @@ export default function RouteGenerator() {
           </div>
         </div>
 
-        <MapContainer 
-          center={BASE} 
-          zoom={13} 
+        <MapContainer
+          key={`${base.lat}-${base.lng}`}   // forces recenter
+          center={BASE_COORDS}
+          zoom={13}
+
           className="h-full w-full"
           zoomControl={false}
         >
           <TileLayer url={MAP_THEMES[activeTheme].url} />
           
-          <Circle 
-            center={BASE} 
+          <Circle center={BASE_COORDS}
             radius={radius * 1000} 
             pathOptions={{ color: '#3b82f6', weight: 1, fillColor: '#3b82f6', fillOpacity: 0.05 }} 
           />
+
+          {/* HQ MARKER */}
+          <Marker position={BASE_COORDS} icon={baseIcon}>
+            <Popup>
+              <strong>Police HQ</strong><br />
+              {base.lat.toFixed(4)}, {base.lng.toFixed(4)}
+            </Popup>
+          </Marker>
+
 
           {/* Zones Logic (Only high risk markers always visible) */}
           {zones.filter(z => z.risk >= 5).map((zone, i) => (
