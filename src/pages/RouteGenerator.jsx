@@ -129,17 +129,12 @@ export default function RouteGenerator() {
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const forced = await generateSmartRoute(zones, kmLimit, 2, radius, true);
-
-      let finalRouteData = forced;
-      if (forced.totalDistance > kmLimit + 5) {
-        const choice = window.confirm(
-          "High-risk coverage exceeds distance.\nOK = Prioritize Safety\nCancel = Limit Distance"
-        );
-        finalRouteData = await generateSmartRoute(zones, kmLimit, 5, radius, choice);
-      }
+      // 1. Generate smart route up to strict maxKm bound
+      const finalRouteData = await generateSmartRoute(zones, kmLimit, 0, radius, false);
 
       setSelectedZones(finalRouteData.route);
+      
+      // 2. Snap to real roads & get actual exact distance metadata
       const road = await getRoadRoute(finalRouteData.route);
       setRouteData(road);
 

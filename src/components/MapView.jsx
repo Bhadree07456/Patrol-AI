@@ -60,10 +60,10 @@ const tacticalIcon = (risk) =>
     html: `
       <div class="relative flex items-center justify-center">
         <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full ${
-          risk >= 8 ? "bg-red-400" : "bg-blue-400"
+          risk >= 8 ? "bg-red-400" : risk >= 5 ? "bg-amber-400" : "bg-emerald-400"
         } opacity-20"></span>
         <div class="relative h-3 w-3 rounded-full border-2 border-white shadow-lg ${
-          risk >= 8 ? "bg-red-500" : "bg-blue-500"
+          risk >= 8 ? "bg-red-500" : risk >= 5 ? "bg-amber-500" : "bg-emerald-500"
         }"></div>
       </div>`,
     iconSize: [32, 32]
@@ -110,16 +110,22 @@ export default function MapView({ mapStyle = "tactical" }) {
       const saved = localStorage.getItem("riskZones");
       if (saved) setZones(JSON.parse(saved));
     };
-
     window.addEventListener("storage", syncZones);
     syncZones();
-
     return () => window.removeEventListener("storage", syncZones);
   }, []);
 
+  /* ---------------- REMOVE ZONE ---------------- */
+  const removeZone = (id) => {
+    const updated = zones.filter((z) => z.id !== id);
+    setZones(updated);
+    localStorage.setItem("riskZones", JSON.stringify(updated));
+    window.dispatchEvent(new Event("storage"));
+  };
+
   return (
     <MapContainer
-      key={`${base.lat}-${base.lng}`}   // 🔥 forces recenter when HQ changes
+      key={`${base.lat}-${base.lng}`}
       center={[base.lat, base.lng]}
       zoom={13}
       zoomControl={false}
@@ -145,23 +151,37 @@ export default function MapView({ mapStyle = "tactical" }) {
           icon={tacticalIcon(zone.risk)}
         >
           <Popup>
-            <div className="p-1 min-w-[160px]">
-              <h3 className="text-sm font-bold">{zone.name}</h3>
-
-              <div className="mt-2 flex justify-between">
-                <span className="text-[10px] uppercase text-slate-400 font-bold">
+            <div style={{ minWidth: "160px", padding: "4px" }}>
+              <h3 style={{ fontWeight: "bold", marginBottom: "6px" }}>{zone.name}</h3>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "10px", textTransform: "uppercase", color: "#94a3b8", fontWeight: "bold" }}>
                   Risk Index
                 </span>
-                <span className={`font-black ${
-                  zone.risk >= 8 ? "text-red-500" : "text-blue-500"
-                }`}>
+                <span style={{ fontWeight: "900", color: zone.risk >= 8 ? "#ef4444" : zone.risk >= 5 ? "#f59e0b" : "#10b981" }}>
                   {zone.risk}/10
                 </span>
               </div>
+              <button
+                onClick={() => removeZone(zone.id)}
+                style={{
+                  width: "100%",
+                  background: "#ef4444",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "5px 8px",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                }}
+              >
+                🗑 Remove Zone
+              </button>
             </div>
           </Popup>
         </Marker>
       ))}
+
     </MapContainer>
   );
 }

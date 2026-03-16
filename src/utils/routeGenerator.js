@@ -1,19 +1,22 @@
 import { getDistance } from "geolib";
-import { snapToRoad } from "./snapToRoad";
 import { getBaseLocation } from "./baseLocation";
-
 
 const BASE = getBaseLocation();
 
-function distanceKm(a, b) {
+function straightLineKm(a, b) {
   return getDistance(
     { latitude: a.lat, longitude: a.lng },
     { latitude: b.lat, longitude: b.lng }
   ) / 1000;
 }
 
+// Detour multiplier ~ 1.5 provides much closer road driving distance estimation
+function estRoadKm(a, b) {
+  return straightLineKm(a, b) * 1.5;
+}
+
 function insideRadius(point, base, radius) {
-  return distanceKm(base, point) <= radius;
+  return straightLineKm(base, point) <= radius;
 }
 
 function randomPointAround(base, radiusKm) {
@@ -32,32 +35,39 @@ function randomPointAround(base, radiusKm) {
 
 export async function generateSmartRoute(
   zones,
-  targetKm = 20,
-  tolerance = 5,
+  maxKm = 20, // This is now a hard limit
+  tolerance = 0, // Ignored entirely
   radius = 10,
   forceCoverAll = true
 ) {
-
-  const minKm = targetKm - tolerance;
-  const maxKm = targetKm + tolerance;
 
   let route = [];
   let total = 0;
   let current = BASE;
 
+  // Apply a safety margin so real-road distances stay under maxKm
+  const safeMaxKm = maxKm * 0.90;
+
   // 🔥 High Risk Zones
-  const highRiskZones = zones
+  let highRiskZones = zones
     .filter(z => z.risk && Number(z.risk) >= 8)
     .filter(z => insideRadius(z, BASE, radius));
 
-  for (let zone of highRiskZones) {
+  while (highRiskZones.length > 0) {
+    // Nearest neighbor algorithm for efficiency
+    highRiskZones.sort((a, b) => estRoadKm(current, a) - estRoadKm(current, b));
+    const zone = highRiskZones.shift();
 
-    const travel = distanceKm(current, zone);
-    const returnDist = distanceKm(zone, BASE);
+    const travel = estRoadKm(current, zone);
+    const returnDist = estRoadKm(zone, BASE);
 
-    // Skip only if user chooses KM priority
-    if (!forceCoverAll && total + travel + returnDist > maxKm) {
-      continue;
+    // If adding this zone plus returning to base exceeds safeMaxKm
+    if (total + travel + returnDist > safeMaxKm) {
+      if (!forceCoverAll) {
+        continue;
+      }
+      // If forceCoverAll is true, we STILL add it, but this means we will
+      // exceed maxKm. The frontend warns the user about this.
     }
 
     route.push(zone);
@@ -65,33 +75,33 @@ export async function generateSmartRoute(
     current = zone;
   }
 
-  // Routine Patrol
+  // Routine Patrol (Fill the gap up to safeMaxKm)
   let safetyCounter = 0;
 
-  while (total < minKm && safetyCounter < 25) {
-
+  // We want to generate extra steps as long as there is room.
+  // We stop once the distance + return trip gets very close to safeMaxKm.
+  while (safetyCounter < 200) {
     safetyCounter++;
 
-    let randomPoint = randomPointAround(BASE, radius);
-    const patrolPoint = await snapToRoad(randomPoint);
-
-    if (!patrolPoint) continue;
+    let patrolPoint = randomPointAround(BASE, radius);
     if (!insideRadius(patrolPoint, BASE, radius)) continue;
 
-    const travel = distanceKm(current, patrolPoint);
-    const returnDist = distanceKm(patrolPoint, BASE);
+    const travel = estRoadKm(current, patrolPoint);
+    const returnDist = estRoadKm(patrolPoint, BASE);
 
-    if (total + travel + returnDist > maxKm) continue;
+    // Hard limit: only add the point if we can go there AND return to BASE without exceeding safeMaxKm.
+    // Also, don't add points that barely move us (e.g. minimum travel dist)
+    if (total + travel + returnDist <= safeMaxKm && travel > 0.5) {
+      route.push({
+        id: "routine-" + Math.random(),
+        ...patrolPoint,
+        risk: null,
+        name: "Routine Patrol"
+      });
 
-    route.push({
-      id: "routine-" + Math.random(),
-      ...patrolPoint,
-      risk: null,
-      name: "Routine Patrol"
-    });
-
-    total += travel;
-    current = patrolPoint;
+      total += travel;
+      current = patrolPoint;
+    }
   }
 
   return {

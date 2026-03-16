@@ -2,7 +2,8 @@ import React, { useMemo } from "react";
 import zones from "../data/riskZones.json";
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, 
-  ResponsiveContainer, CartesianGrid, Cell 
+  ResponsiveContainer, CartesianGrid, Cell,
+  LineChart, Line
 } from "recharts";
 import { 
   BarChart3, 
@@ -14,13 +15,30 @@ import {
 
 export default function Analytics() {
   // Logic to process stats
-  const stats = useMemo(() => {
+  const { stats, dateStats } = useMemo(() => {
     const total = zones.length;
     const highRisk = zones.filter(z => z.risk >= 8).length;
-    const avgRisk = (zones.reduce((acc, z) => acc + z.risk, 0) / total).toFixed(1);
+    const avgRisk = total > 0 ? (zones.reduce((acc, z) => acc + z.risk, 0) / total).toFixed(1) : 0;
     const safeZones = zones.filter(z => z.risk < 5).length;
     
-    return { total, highRisk, avgRisk, safeZones };
+    // Group zones by date
+    const dateMap = {};
+    zones.forEach(z => {
+      // Default to today if older zones don't have a date property
+      const d = z.date || new Date().toISOString().split("T")[0];
+      dateMap[d] = (dateMap[d] || 0) + 1;
+    });
+
+    // Convert map to sorted array for the line chart
+    const dateStats = Object.keys(dateMap).sort().map(date => ({
+      date,
+      count: dateMap[date]
+    }));
+    
+    return { 
+      stats: { total, highRisk, avgRisk, safeZones },
+      dateStats
+    };
   }, []);
 
   return (
@@ -48,36 +66,63 @@ export default function Analytics() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* --- MAIN CHART PANEL --- */}
-        <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-xl">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Risk Distribution by Sector</h2>
-            <div className="flex gap-2">
-              <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Critical Threshold</span>
+        <div className="lg:col-span-2 bg-slate-900/50 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Risk Distribution by Sector Volume</h2>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Secure (0-4)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-amber-500 rounded-full"></span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Elevated (5-7)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-red-500 rounded-full"></span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase">Critical (8-10)</span>
+              </div>
             </div>
           </div>
           
-          <div className="h-[400px] w-full">
+          <div className="flex-1 w-full min-h-[350px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={zones} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart 
+                data={[
+                  {
+                    name: "Secure", 
+                    count: zones.filter(z => z.risk < 5).length,
+                    fill: "#10b981"
+                  },
+                  {
+                    name: "Elevated", 
+                    count: zones.filter(z => z.risk >= 5 && z.risk < 8).length,
+                    fill: "#f59e0b"
+                  },
+                  {
+                    name: "Critical", 
+                    count: zones.filter(z => z.risk >= 8).length,
+                    fill: "#ef4444"
+                  }
+                ]} 
+                margin={{ top: 20, right: 20, left: -20, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis 
                   dataKey="name" 
                   stroke="#64748b" 
-                  fontSize={10} 
+                  fontSize={12}
+                  fontWeight={600}
                   tickLine={false} 
                   axisLine={false}
-                  interval={0}
-                  angle={-45}
-                  textAnchor="end"
-                  height={60}
                 />
                 <YAxis 
                   stroke="#64748b" 
-                  fontSize={10} 
+                  fontSize={11} 
+                  fontWeight={600}
                   tickLine={false} 
                   axisLine={false} 
-                  domain={[0, 10]}
+                  allowDecimals={false}
                 />
                 <Tooltip 
                   cursor={{ fill: 'rgba(255,255,255,0.05)' }}
@@ -85,41 +130,86 @@ export default function Analytics() {
                     backgroundColor: '#0f172a', 
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderRadius: '12px',
-                    fontSize: '12px'
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
                   }}
+                  itemStyle={{
+                    color: '#e2e8f0'
+                  }}
+                  formatter={(value) => [`${value} Zones`, 'Total Volume']}
                 />
-                <Bar dataKey="risk" radius={[4, 4, 0, 0]}>
-                  {zones.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={entry.risk >= 8 ? '#ef4444' : entry.risk >= 5 ? '#f59e0b' : '#3b82f6'} 
-                    />
-                  ))}
+                <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={80}>
+                  { /* We use the cell logic mapping from the data directly for cleaner styling */ }
+                  {
+                    [0, 1, 2].map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={index === 0 ? '#10b981' : index === 1 ? '#f59e0b' : '#ef4444'} 
+                      />
+                    ))
+                  }
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* --- SUMMARY SIDEBAR --- */}
-        <div className="bg-slate-900/50 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-xl space-y-6">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Resource Priority</h2>
-          
-          <div className="space-y-4">
-            {zones.sort((a,b) => b.risk - a.risk).slice(0, 5).map((zone, i) => (
-              <div key={i} className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl border border-white/5">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-black text-slate-600">0{i+1}</span>
-                  <span className="text-xs font-bold text-white">{zone.name}</span>
-                </div>
-                <span className="text-xs font-black text-red-500 bg-red-500/10 px-2 py-0.5 rounded">
-                  {zone.risk}.0
-                </span>
-              </div>
-            ))}
+        {/* --- TIMELINE CHART PANEL --- */}
+        <div className="bg-slate-900/50 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-xl flex flex-col space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">Risk Timeline</h2>
           </div>
-
-          <div className="pt-4 border-t border-white/5 text-center">
+          
+          <div className="flex-1 w-full min-h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart 
+                data={dateStats} 
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="#64748b" 
+                  fontSize={10} 
+                  fontWeight={600}
+                  tickLine={false} 
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="#64748b" 
+                  fontSize={10} 
+                  fontWeight={600}
+                  tickLine={false} 
+                  axisLine={false} 
+                  allowDecimals={false}
+                />
+                <Tooltip 
+                  cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 2 }}
+                  contentStyle={{ 
+                    backgroundColor: '#0f172a', 
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)'
+                  }}
+                  itemStyle={{ color: '#e2e8f0' }}
+                  formatter={(value) => [`${value} Zones Recorded`, 'Incidents']}
+                  labelStyle={{ color: '#94a3b8', marginBottom: '4px' }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="count" 
+                  stroke="#3b82f6" 
+                  strokeWidth={3}
+                  dot={{ fill: '#0f172a', stroke: '#3b82f6', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6, fill: '#3b82f6', stroke: '#fff' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="pt-2 border-t border-white/5 text-center">
              <button className="text-[10px] font-black uppercase text-blue-400 hover:text-blue-300 transition-colors">
                Export Full Audit Report
              </button>
