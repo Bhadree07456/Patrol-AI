@@ -1,0 +1,18 @@
+[
+  { "name": "Chennai Central HQ", "lat": 13.0411, "lng": 80.21999166666667 },
+  { "name": "Coimbatore Central HQ", "lat": 11.021958333333336, "lng": 76.96340833333333 },
+  { "name": "Madurai Central HQ", "lat": 9.915624999999999, "lng": 78.13244166666667 },
+  { "name": "Trichy Central HQ", "lat": 10.839891666666666, "lng": 78.69600833333332 },
+  { "name": "Salem Central HQ", "lat": 11.673, "lng": 78.150325 },
+  { "name": "Tirunelveli Central HQ", "lat": 8.717716666666666, "lng": 77.75776666666667 },
+  { "name": "Erode Central HQ", "lat": 11.346816666666667, "lng": 77.72678333333333 },
+  { "name": "Vellore Central HQ", "lat": 12.93124166666667, "lng": 79.13555833333334 },
+  { "name": "Kanchipuram Central HQ", "lat": 12.838249999999997, "lng": 79.70468333333334 },
+  { "name": "Cuddalore Central HQ", "lat": 11.738741666666664, "lng": 79.76729166666667 },
+  { "name": "Thoothukudi Central HQ", "lat": 8.7693, "lng": 78.14279166666667 },
+  { "name": "Villupuram Central HQ", "lat": 11.93679166666667, "lng": 79.48893333333334 },
+  { "name": "Dindigul Central HQ", "lat": 10.358066666666668, "lng": 77.96300000000001 },
+  { "name": "Kanyakumari Central HQ", "lat": 8.074541666666667, "lng": 77.5415 },
+  { "name": "Tiruppur Central HQ", "lat": 11.115016666666667, "lng": 77.34514166666666 },
+  { "name": "Thanjavur Central HQ", "lat": 10.787058333333334, "lng": 79.13956666666667 }
+]

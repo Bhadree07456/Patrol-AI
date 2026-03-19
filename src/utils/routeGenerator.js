@@ -1,8 +1,6 @@
 import { getDistance } from "geolib";
 import { getBaseLocation } from "./baseLocation";
 
-const BASE = getBaseLocation();
-
 function straightLineKm(a, b) {
   return getDistance(
     { latitude: a.lat, longitude: a.lng },
@@ -38,8 +36,11 @@ export async function generateSmartRoute(
   maxKm = 20, // This is now a hard limit
   tolerance = 0, // Ignored entirely
   radius = 10,
-  forceCoverAll = true
+  forceCoverAll = true,
+  base = null   // optional override; defaults to current active HQ
 ) {
+  // Always read live so switching HQ is reflected immediately
+  const BASE = base ?? getBaseLocation();
 
   let route = [];
   let total = 0;

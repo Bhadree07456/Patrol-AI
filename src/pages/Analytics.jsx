@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import zones from "../data/riskZones.json";
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, 
@@ -10,10 +10,14 @@ import {
   AlertOctagon, 
   ShieldCheck, 
   TrendingUp,
-  Zap
+  Zap,
+  Download
 } from "lucide-react";
+import { exportAuditReport } from "../utils/auditReportExporter";
 
 export default function Analytics() {
+  const [isExporting, setIsExporting] = useState(false);
+  
   // Logic to process stats
   const { stats, dateStats } = useMemo(() => {
     const total = zones.length;
@@ -210,8 +214,29 @@ export default function Analytics() {
             </ResponsiveContainer>
           </div>
           <div className="pt-2 border-t border-white/5 text-center">
-             <button className="text-[10px] font-black uppercase text-blue-400 hover:text-blue-300 transition-colors">
-               Export Full Audit Report
+             <button 
+               onClick={async () => {
+                 setIsExporting(true);
+                 try {
+                   await new Promise(resolve => {
+                     exportAuditReport(zones, dateStats, stats);
+                     resolve();
+                   });
+               setTimeout(() => setIsExporting(false), 500);
+                 } catch (error) {
+                   console.error('Export failed:', error);
+                   setIsExporting(false);
+                 }
+               }}
+               disabled={isExporting}
+               className={`flex items-center justify-center gap-1.5 mx-auto px-3 py-1.5 text-[10px] font-black uppercase text-blue-400 bg-blue-500/10 rounded transition-all duration-200 border border-blue-500/30 ${
+                 isExporting 
+                   ? 'opacity-60 cursor-not-allowed' 
+                   : 'hover:text-blue-300 hover:bg-blue-500/20 hover:border-blue-500/50'
+               }`}
+             >
+               <Download size={12} />
+               {isExporting ? 'Generating Report...' : 'Export Full Audit Report'}
              </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import MapView from "../components/MapView";
-import { Shield, AlertTriangle, Navigation, Activity, Map, Satellite, Moon } from "lucide-react";
+import { Shield, Map, Satellite, Moon } from "lucide-react";
 
 import TN_GOV from "../assets/logo/tn_gov_logo.png";
 import TNSPS from "../assets/logo/TNSPS-nobg.png";
@@ -81,25 +81,7 @@ export default function Dashboard() {
           {/* STATS */}
           <div className="hidden md:flex gap-4 pointer-events-auto">
             <div className="hidden md:flex gap-4 pointer-events-auto">
-              <StatPill
-                icon={<AlertTriangle size={14} className="text-red-500" />}
-                label="High Risk"
-                value="12"
-              />
-
-              <StatPill
-                icon={<Navigation size={14} className="text-emerald-500" />}
-                label="Units"
-                value="04"
-              />
-
-              <StatPill
-                icon={<Activity size={14} className="text-blue-500" />}
-                label="Uptime"
-                value="99.9%"
-              />
-
-              {/* ✅ NEW HQ CARD */}
+              {/* HQ CARD */}
               <StatPill
                 icon={<Shield size={14} className="text-indigo-500" />}
                 label="HQ Location"

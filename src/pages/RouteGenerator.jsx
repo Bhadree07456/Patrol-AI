@@ -61,6 +61,23 @@ const highRiskIcon = createCustomIcon("#ef4444", "rgba(239,68,68,.6)");
 const routineIcon = createCustomIcon("#3b82f6", "rgba(59,130,246,.6)");
 const baseIcon = createCustomIcon("#10b981", "rgba(16,185,129,.6)");
 
+/* ---------------- TACTICAL GLOWING ICON FOR RISK ZONES ---------------- */
+
+const tacticalIcon = (risk) =>
+  new L.divIcon({
+    className: "custom-tactical-icon",
+    html: `
+      <div class="relative flex items-center justify-center">
+        <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full ${
+          risk >= 8 ? "bg-red-400" : risk >= 5 ? "bg-amber-400" : "bg-emerald-400"
+        } opacity-20"></span>
+        <div class="relative h-3 w-3 rounded-full border-2 border-white shadow-lg ${
+          risk >= 8 ? "bg-red-500" : risk >= 5 ? "bg-amber-500" : "bg-emerald-500"
+        }"></div>
+      </div>`,
+    iconSize: [32, 32]
+  });
+
 /* ---------------- MAP THEMES ---------------- */
 
 const MAP_THEMES = {
@@ -264,13 +281,13 @@ export default function RouteGenerator() {
           </Marker>
 
 
-          {/* Zones Logic (Only high risk markers always visible) */}
-          {zones.filter(z => z.risk >= 5).map((zone, i) => (
-            <Marker key={`zone-${i}`} position={[zone.lat, zone.lng]} icon={highRiskIcon}>
+          {/* Risk Zones (All zones visible with glowing effect) */}
+          {zones.map((zone, i) => (
+            <Marker key={`zone-${i}`} position={[zone.lat, zone.lng]} icon={tacticalIcon(zone.risk)}>
               <Popup className="custom-popup">
                 <div className="p-1 leading-tight">
                   <p className="font-bold text-slate-800">{zone.name}</p>
-                  <p className="text-[10px] text-red-500 font-bold uppercase tracking-tighter">High Risk Level: {zone.risk}</p>
+                  <p className="text-[10px] text-red-500 font-bold uppercase tracking-tighter">Risk Level: {zone.risk}</p>
                 </div>
               </Popup>
             </Marker>
