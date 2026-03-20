@@ -1,6 +1,8 @@
 import { getDistance } from "geolib";
 import { getBaseLocation } from "./baseLocation";
 
+/* ---------------- HELPERS ---------------- */
+
 function straightLineKm(a, b) {
   return getDistance(
     { latitude: a.lat, longitude: a.lng },
@@ -8,105 +10,228 @@ function straightLineKm(a, b) {
   ) / 1000;
 }
 
-// Detour multiplier ~ 1.5 provides much closer road driving distance estimation
 function estRoadKm(a, b) {
-  return straightLineKm(a, b) * 1.5;
+  return straightLineKm(a, b) * 1.7;
 }
 
-function insideRadius(point, base, radius) {
-  return straightLineKm(base, point) <= radius;
+/* ---------------- SEEDED RANDOM (daily rotation) ---------------- */
+// Different seed each day AND each generation call so routes vary
+function getDailySeed() {
+  const now = new Date();
+  // Combine date + a random salt stored per session so each click differs
+  const datePart = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+  let salt = sessionStorage.getItem("routeSalt");
+  if (!salt) {
+    salt = Math.floor(Math.random() * 99999).toString();
+    sessionStorage.setItem("routeSalt", salt);
+  }
+  return datePart + parseInt(salt);
 }
 
-function randomPointAround(base, radiusKm) {
-  const r = radiusKm / 111;
-  const u = Math.random();
-  const v = Math.random();
-
-  const w = r * Math.sqrt(u);
-  const t = 2 * Math.PI * v;
-
-  return {
-    lat: base.lat + w * Math.cos(t),
-    lng: base.lng + w * Math.sin(t)
+function seededRandom(seed) {
+  // Simple LCG random number generator
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
   };
 }
 
+function shuffleArray(arr, rng) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* ---------------- VISIT TRACKING ---------------- */
+
+function getWeekNumber() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  return Math.floor((now - start) / (1000 * 60 * 60 * 24 * 7));
+}
+
+function getVisitHistory() {
+  const saved = localStorage.getItem("zoneVisitHistory");
+  if (!saved) return { week: getWeekNumber(), visits: {} };
+  const history = JSON.parse(saved);
+  if (history.week !== getWeekNumber()) return { week: getWeekNumber(), visits: {} };
+  return history;
+}
+
+function updateVisitHistory(zoneId) {
+  const history = getVisitHistory();
+  if (!history.visits[zoneId]) history.visits[zoneId] = 0;
+  history.visits[zoneId]++;
+  localStorage.setItem("zoneVisitHistory", JSON.stringify(history));
+}
+
+function filterZonesByVisitFrequency(zones) {
+  const { visits = {} } = getVisitHistory();
+  return zones.map(zone => {
+    const visitCount = visits[zone.id] || 0;
+    const targetVisits = zone.risk >= 8 ? 4 : 3;
+    return {
+      ...zone,
+      visitCount,
+      targetVisits,
+      needsVisit: visitCount < targetVisits,
+      priority: Math.max(0, (zone.risk >= 8 ? 4 : 3) - visitCount)
+    };
+  });
+}
+
+/* ---------------- MAIN FUNCTION ---------------- */
+
 export async function generateSmartRoute(
   zones,
-  maxKm = 20, // This is now a hard limit
-  tolerance = 0, // Ignored entirely
-  radius = 10,
+  maxKm = 25,
+  tolerance = 0,
+  radius = 5,
   forceCoverAll = true,
-  base = null   // optional override; defaults to current active HQ
+  base = null
 ) {
-  // Always read live so switching HQ is reflected immediately
   const BASE = base ?? getBaseLocation();
+  const safeMaxKm = maxKm * 0.80;
+
+  // New salt each click so every generation is different
+  sessionStorage.setItem("routeSalt", Math.floor(Math.random() * 99999).toString());
+  const rng = seededRandom(getDailySeed());
+
+  console.log("=== ROUTE GENERATION START ===");
+  console.log("Base:", BASE, "| Max:", maxKm, "km | Safe:", safeMaxKm.toFixed(1), "km | Radius:", radius, "km");
 
   let route = [];
   let total = 0;
   let current = BASE;
+  const visited = new Set();
+  const key = (p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+  const isVisited = (z) => visited.has(key(z));
+  const markVisited = (z) => visited.add(key(z));
 
-  // Apply a safety margin so real-road distances stay under maxKm
-  const safeMaxKm = maxKm * 0.90;
+  // Deduplicate
+  const seen = new Set();
+  const uniqueZones = zones.filter(z => {
+    const k = key(z);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
-  // 🔥 High Risk Zones
-  let highRiskZones = zones
-    .filter(z => z.risk && Number(z.risk) >= 8)
-    .filter(z => insideRadius(z, BASE, radius));
+  // Filter by radius
+  const zonesInRadius = uniqueZones.filter(z => straightLineKm(BASE, z) <= radius);
+  console.log("Zones in Radius:", zonesInRadius.length);
 
-  while (highRiskZones.length > 0) {
-    // Nearest neighbor algorithm for efficiency
-    highRiskZones.sort((a, b) => estRoadKm(current, a) - estRoadKm(current, b));
-    const zone = highRiskZones.shift();
+  if (zonesInRadius.length === 0) {
+    let nearestDist = Infinity, nearestZone = null;
+    for (const z of uniqueZones) {
+      const d = straightLineKm(BASE, z);
+      if (d < nearestDist) { nearestDist = d; nearestZone = z; }
+    }
+    alert(`No zones within ${radius}km.\nNearest: "${nearestZone?.name}" is ${nearestDist.toFixed(1)}km away.\nIncrease scan radius to at least ${Math.ceil(nearestDist + 2)}km.`);
+    return { route: [BASE, BASE], totalDistance: 0, zonesVisited: 0, weeklyProgress: { critical: [], elevated: [], secure: [] } };
+  }
 
-    const travel = estRoadKm(current, zone);
-    const returnDist = estRoadKm(zone, BASE);
+  // Visit frequency info
+  const zonesWithInfo = filterZonesByVisitFrequency(zonesInRadius);
+  let pool = zonesWithInfo.filter(z => z.needsVisit);
 
-    // If adding this zone plus returning to base exceeds safeMaxKm
+  // If all zones hit weekly target, reset pool to all zones (least visited first)
+  if (pool.length === 0) {
+    console.warn("All zones hit weekly target — using full pool");
+    pool = [...zonesWithInfo].sort((a, b) => a.visitCount - b.visitCount);
+  }
+
+  // Split by risk level
+  const critical = pool.filter(z => z.risk >= 8);
+  const elevated = pool.filter(z => z.risk >= 5 && z.risk < 8);
+  const secure   = pool.filter(z => z.risk > 0 && z.risk < 5);
+
+  console.log(`Pool — Critical: ${critical.length}, Elevated: ${elevated.length}, Secure: ${secure.length}`);
+
+  // Shuffle each group independently using seeded RNG for variety
+  const shuffledCritical = shuffleArray(critical, rng);
+  const shuffledElevated = shuffleArray(elevated, rng);
+  const shuffledSecure   = shuffleArray(secure, rng);
+
+  // Calculate how many zones we can fit with slightly random mix
+  const maxZones = Math.max(6, Math.floor(safeMaxKm / 1.7));
+  
+  // Randomize the mix slightly (e.g. 35-55% critical, 25-45% elevated)
+  const cRatio = 0.35 + rng() * 0.20; 
+  const eRatio = 0.25 + rng() * 0.20;
+  const sRatio = Math.max(0.1, 1.0 - cRatio - eRatio);
+
+  const cCount = Math.min(shuffledCritical.length, Math.ceil(maxZones * cRatio));
+  const eCount = Math.min(shuffledElevated.length, Math.ceil(maxZones * eRatio));
+  const sCount = Math.min(shuffledSecure.length,   Math.ceil(maxZones * sRatio));
+
+  // Build candidate list: critical first, then elevated, then secure
+  let candidates = [
+    ...shuffledCritical.slice(0, cCount),
+    ...shuffledElevated.slice(0, eCount),
+    ...shuffledSecure.slice(0, sCount)
+  ];
+
+  console.log("Candidates selected:", candidates.length);
+
+  // Nearest-neighbour with jitter to vary the path
+  let zonesAdded = 0;
+  while (candidates.length > 0) {
+    const unvisited = candidates.filter(z => !isVisited(z));
+    if (unvisited.length === 0) break;
+
+    // Calculate distance to all potential points with jitter
+    const options = unvisited.map(z => ({
+      zone: z,
+      dist: estRoadKm(current, z) * (0.75 + rng() * 0.5), // Increased jitter (75% to 125%)
+      trueDist: estRoadKm(current, z)
+    })).sort((a, b) => a.dist - b.dist);
+
+    // Pick from the top 3 closest (or top 5 if starting from HQ) to ensure different directions
+    const selectionWindow = (current === BASE) ? 5 : 3;
+    const pickIdx = Math.floor(rng() * Math.min(selectionWindow, options.length));
+    const selected = options[pickIdx];
+    
+    const bestZone = selected.zone;
+    const travel = selected.trueDist;
+    const returnDist = estRoadKm(bestZone, BASE);
+
+    // Get original index in candidates
+    const candIdx = candidates.findIndex(c => c.id === bestZone.id);
+
     if (total + travel + returnDist > safeMaxKm) {
-      if (!forceCoverAll) {
-        continue;
-      }
-      // If forceCoverAll is true, we STILL add it, but this means we will
-      // exceed maxKm. The frontend warns the user about this.
+      candidates.splice(candIdx, 1);
+      continue;
     }
 
-    route.push(zone);
+    route.push(bestZone);
+    markVisited(bestZone);
+    // Note: We keep updateVisitHistory here to ensure variety across clicks 
+    // because it will make these zones less likely to appear in the next 'pool' selection.
+    updateVisitHistory(bestZone.id); 
+    
     total += travel;
-    current = zone;
+    current = bestZone;
+    candidates.splice(candIdx, 1);
+    zonesAdded++;
   }
 
-  // Routine Patrol (Fill the gap up to safeMaxKm)
-  let safetyCounter = 0;
+  total += estRoadKm(current, BASE);
 
-  // We want to generate extra steps as long as there is room.
-  // We stop once the distance + return trip gets very close to safeMaxKm.
-  while (safetyCounter < 200) {
-    safetyCounter++;
-
-    let patrolPoint = randomPointAround(BASE, radius);
-    if (!insideRadius(patrolPoint, BASE, radius)) continue;
-
-    const travel = estRoadKm(current, patrolPoint);
-    const returnDist = estRoadKm(patrolPoint, BASE);
-
-    // Hard limit: only add the point if we can go there AND return to BASE without exceeding safeMaxKm.
-    // Also, don't add points that barely move us (e.g. minimum travel dist)
-    if (total + travel + returnDist <= safeMaxKm && travel > 0.5) {
-      route.push({
-        id: "routine-" + Math.random(),
-        ...patrolPoint,
-        risk: null,
-        name: "Routine Patrol"
-      });
-
-      total += travel;
-      current = patrolPoint;
-    }
-  }
+  console.log(`Route complete — ${zonesAdded} zones, ${total.toFixed(2)} km`);
 
   return {
     route: [BASE, ...route, BASE],
-    totalDistance: total
+    totalDistance: total,
+    zonesVisited: zonesAdded,
+    weeklyProgress: {
+      critical: zonesWithInfo.filter(z => z.risk >= 8).map(z => ({ name: z.name, visits: z.visitCount, target: z.targetVisits })),
+      elevated: zonesWithInfo.filter(z => z.risk >= 5 && z.risk < 8).map(z => ({ name: z.name, visits: z.visitCount, target: z.targetVisits })),
+      secure:   zonesWithInfo.filter(z => z.risk < 5).map(z => ({ name: z.name, visits: z.visitCount, target: z.targetVisits }))
+    }
   };
 }

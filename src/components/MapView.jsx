@@ -60,11 +60,13 @@ const tacticalIcon = (risk) =>
     html: `
       <div class="relative flex items-center justify-center">
         <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full ${
-          risk >= 8 ? "bg-red-400" : risk >= 5 ? "bg-amber-400" : "bg-emerald-400"
-        } opacity-20"></span>
+          risk >= 8 ? "bg-red-600" : risk >= 5 ? "bg-orange-500" : "bg-emerald-500"
+        } opacity-50"></span>
         <div class="relative h-3 w-3 rounded-full border-2 border-white shadow-lg ${
-          risk >= 8 ? "bg-red-500" : risk >= 5 ? "bg-amber-500" : "bg-emerald-500"
-        }"></div>
+          risk >= 8 ? "bg-red-700" : risk >= 5 ? "bg-orange-600" : "bg-emerald-600"
+        }" style="box-shadow: 0 0 12px ${
+          risk >= 8 ? "rgba(185, 28, 28, 0.9)" : risk >= 5 ? "rgba(234, 88, 12, 0.9)" : "rgba(5, 150, 105, 0.9)"
+        };"></div>
       </div>`,
     iconSize: [32, 32]
   });
@@ -75,13 +77,34 @@ const baseIcon = new L.divIcon({
   className: "custom-base-icon",
   html: `
     <div style="
-      background:#3b82f6;
-      width:14px;height:14px;
-      border-radius:50%;
-      border:2px solid white;
-      box-shadow:0 0 12px #3b82f6;
-    "></div>`,
-  iconSize: [14, 14],
+      position: relative;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    ">
+      <div style="
+        background:#3b82f6;
+        width:20px;
+        height:20px;
+        border-radius:50%;
+        border:2px solid white;
+        box-shadow:0 0 12px #3b82f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <span style="
+          color: white;
+          font-weight: bold;
+          font-size: 12px;
+          font-family: Arial, sans-serif;
+        ">H</span>
+      </div>
+    </div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
 });
 
 /* ---------------- MAIN MAP ---------------- */
@@ -100,28 +123,29 @@ export default function MapView({ mapStyle = "tactical" }) {
 
   /* ---------------- LOAD ZONES ---------------- */
   const [zones, setZones] = useState(() => {
-    const saved = localStorage.getItem("riskZones");
+    const saved = localStorage.getItem("riskZones_v3");
     return saved ? JSON.parse(saved) : defaultZones;
   });
 
   /* ---------------- SYNC ZONES ---------------- */
   useEffect(() => {
     const syncZones = () => {
-      const saved = localStorage.getItem("riskZones");
+      const saved = localStorage.getItem("riskZones_v3");
       if (saved) setZones(JSON.parse(saved));
     };
+    
+    // Listen for storage events (cross-tab) and custom events (same-page)
     window.addEventListener("storage", syncZones);
+    window.addEventListener("zonesUpdated", syncZones);
+    
+    // Initial sync
     syncZones();
-    return () => window.removeEventListener("storage", syncZones);
+    
+    return () => {
+      window.removeEventListener("storage", syncZones);
+      window.removeEventListener("zonesUpdated", syncZones);
+    };
   }, []);
-
-  /* ---------------- REMOVE ZONE ---------------- */
-  const removeZone = (id) => {
-    const updated = zones.filter((z) => z.id !== id);
-    setZones(updated);
-    localStorage.setItem("riskZones", JSON.stringify(updated));
-    window.dispatchEvent(new Event("storage"));
-  };
 
   return (
     <MapContainer
@@ -161,22 +185,6 @@ export default function MapView({ mapStyle = "tactical" }) {
                   {zone.risk}/10
                 </span>
               </div>
-              <button
-                onClick={() => removeZone(zone.id)}
-                style={{
-                  width: "100%",
-                  background: "#ef4444",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "6px",
-                  padding: "5px 8px",
-                  fontSize: "11px",
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                }}
-              >
-                🗑 Remove Zone
-              </button>
             </div>
           </Popup>
         </Marker>

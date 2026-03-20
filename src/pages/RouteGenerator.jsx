@@ -113,8 +113,8 @@ export default function RouteGenerator() {
 
   const zones = useSharedZones(); // 🔥 dynamic zones
 
-  const [kmLimit, setKmLimit] = useState(20);
-  const [radius, setRadius] = useState(10);
+  const [kmLimit, setKmLimit] = useState(35);
+  const [radius, setRadius] = useState(5);
   const [routeData, setRouteData] = useState(null);
   const [selectedZones, setSelectedZones] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -147,7 +147,7 @@ export default function RouteGenerator() {
     setLoading(true);
     try {
       // 1. Generate smart route up to strict maxKm bound
-      const finalRouteData = await generateSmartRoute(zones, kmLimit, 0, radius, false);
+      const finalRouteData = await generateSmartRoute(zones, kmLimit, 0, radius, true);
 
       setSelectedZones(finalRouteData.route);
       
@@ -281,26 +281,35 @@ export default function RouteGenerator() {
           </Marker>
 
 
-          {/* Risk Zones (All zones visible with glowing effect) */}
-          {zones.map((zone, i) => (
-            <Marker key={`zone-${i}`} position={[zone.lat, zone.lng]} icon={tacticalIcon(zone.risk)}>
-              <Popup className="custom-popup">
-                <div className="p-1 leading-tight">
-                  <p className="font-bold text-slate-800">{zone.name}</p>
-                  <p className="text-[10px] text-red-500 font-bold uppercase tracking-tighter">Risk Level: {zone.risk}</p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {/* Risk Zones (Hide those that are part of the active route) */}
+          {(() => {
+            const activeCoords = new Set(selectedZones.map(z => `${z.lat},${z.lng}`));
+            
+            return zones
+              .filter(zone => !activeCoords.has(`${zone.lat},${zone.lng}`))
+              .map((zone, i) => (
+                <Marker key={`zone-${zone.id || i}`} position={[zone.lat, zone.lng]} icon={tacticalIcon(zone.risk)}>
+                  <Popup className="custom-popup">
+                    <div className="p-1 leading-tight">
+                      <p className="font-bold text-slate-800">{zone.name}</p>
+                      <p className="text-[10px] text-red-500 font-bold uppercase tracking-tighter">Risk Level: {zone.risk}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              ));
+          })()}
 
-          {/* Active Patrol Route Markers */}
+          {/* Active Patrol Route Markers (excluding duplicate HQ icons) */}
           {selectedZones.map((zone, index) => {
             const isBase = index === 0 || index === selectedZones.length - 1;
+            // Skip rendering markers for the start/end points since the main HQ marker is already there
+            if (isBase) return null;
+
             const isHighRisk = zone.risk && Number(zone.risk) >= 8;
-            const icon = isBase ? baseIcon : (isHighRisk ? highRiskIcon : routineIcon);
+            const icon = isHighRisk ? highRiskIcon : routineIcon;
 
             return (
-              <Marker key={`route-${index}`} position={[zone.lat, zone.lng]} icon={icon}>
+              <Marker key={`route-${index}-${zone.lat}-${zone.lng}`} position={[zone.lat, zone.lng]} icon={icon}>
                 <Popup>
                   <span className="font-bold">{zone.name || "Patrol Point"}</span>
                 </Popup>

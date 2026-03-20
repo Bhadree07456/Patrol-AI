@@ -9,6 +9,20 @@ import autoTable from 'jspdf-autotable';
  */
 export function exportAuditReport(zones, dateStats, stats) {
   try {
+    console.log('📊 Starting audit report generation...');
+    console.log('Zones:', zones?.length || 0);
+    console.log('DateStats:', dateStats?.length || 0);
+    console.log('Stats:', stats);
+
+    // Validate inputs
+    if (!zones || !Array.isArray(zones) || zones.length === 0) {
+      throw new Error('No zones data available');
+    }
+    
+    if (!stats || typeof stats !== 'object') {
+      throw new Error('Invalid stats data');
+    }
+
     // Create PDF instance
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -241,10 +255,10 @@ export function exportAuditReport(zones, dateStats, stats) {
     }
     
     return [
-      zone.id,
+      zone.id || 'N/A',
       zone.name || 'Unknown Zone',
-      `${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}`,
-      zone.risk,
+      zone.lat && zone.lng ? `${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}` : 'N/A',
+      zone.risk || 0,
       riskLevel,
     ];
   });

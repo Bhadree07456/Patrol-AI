@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import zones from "../data/riskZones.json";
+import React, { useMemo, useState, useEffect } from "react";
+import defaultZones from "../data/riskZones.json";
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, 
   ResponsiveContainer, CartesianGrid, Cell,
@@ -17,6 +17,31 @@ import { exportAuditReport } from "../utils/auditReportExporter";
 
 export default function Analytics() {
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Load zones from localStorage with sync
+  const [zones, setZones] = useState(() => {
+    const saved = localStorage.getItem("riskZones_v3");
+    return saved ? JSON.parse(saved) : defaultZones;
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      const saved = localStorage.getItem("riskZones_v3");
+      if (saved) setZones(JSON.parse(saved));
+    };
+
+    // Listen for storage events (cross-tab) and custom events (same-page)
+    window.addEventListener("storage", sync);
+    window.addEventListener("zonesUpdated", sync);
+    
+    // Initial sync
+    sync();
+
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("zonesUpdated", sync);
+    };
+  }, []);
   
   // Logic to process stats
   const { stats, dateStats } = useMemo(() => {

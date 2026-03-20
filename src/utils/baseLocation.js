@@ -1,6 +1,6 @@
 import defaultHQs from "../data/hqs.json";
 
-const BASES_KEY   = "tnsps_bases_v2";
+const BASES_KEY   = "tnsps_bases_v3";
 const ACTIVE_KEY  = "tnsps_active_base";
 
 /* ─── INTERNAL HELPERS ─── */

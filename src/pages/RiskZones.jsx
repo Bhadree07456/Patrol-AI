@@ -6,8 +6,9 @@ import {
   Marker,
   Popup,
   useMapEvents,
+  useMap,
 } from "react-leaflet";
-import { ShieldAlert, Search, PlusCircle, Home, Check, Trash2, MinusCircle, Star } from "lucide-react";
+import { ShieldAlert, Search, PlusCircle, Home, Check, Trash2, MinusCircle, Star, Sun, Moon, Cloud, Map as MapIcon } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -20,6 +21,30 @@ import {
   setActiveBase,
   subscribeBase,
 } from "../utils/baseLocation";
+
+/* ---------------- MAP THEMES ---------------- */
+const MAP_THEMES = {
+  light: {
+    name: "Clean",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    icon: <Sun size={14} />
+  },
+  dark: {
+    name: "Tactical",
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    icon: <Moon size={14} />
+  },
+  satellite: {
+    name: "Imagery",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    icon: <Cloud size={14} />
+  },
+  standard: {
+    name: "Detailed",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    icon: <MapIcon size={14} />
+  }
+};
 
 /* ---------------- CLICK HANDLER ---------------- */
 function MapClickHandler({ mode, setNewPoint, setNewHQPoint }) {
@@ -36,6 +61,15 @@ function MapClickHandler({ mode, setNewPoint, setNewHQPoint }) {
   return null;
 }
 
+/* ---------------- FLY TO ANIMATION ---------------- */
+function MapRecenter({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(center, 13, { duration: 1.5 });
+  }, [center, map]);
+  return null;
+}
+
 /* ---------------- MARKERS ---------------- */
 const createMarker = (color) =>
   new L.divIcon({
@@ -44,23 +78,55 @@ const createMarker = (color) =>
       background:${color};
       width:12px;height:12px;border-radius:50%;
       border:2px solid white;
-      box-shadow:0 0 10px ${color};
+      box-shadow:0 0 15px ${color}, 0 0 8px ${color};
     "></div>`,
     iconSize: [12, 12],
   });
 
-const baseIcon = createMarker("#3b82f6");
+const baseIcon = new L.divIcon({
+  className: "custom-base-icon",
+  html: `
+    <div style="
+      position: relative;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    ">
+      <div style="
+        background:#3b82f6;
+        width:20px;
+        height:20px;
+        border-radius:50%;
+        border:2px solid white;
+        box-shadow:0 0 12px #3b82f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      ">
+        <span style="
+          color: white;
+          font-weight: bold;
+          font-size: 12px;
+          font-family: Arial, sans-serif;
+        ">H</span>
+      </div>
+    </div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
 
 /* ---------------- COMPONENT ---------------- */
 export default function RiskZones() {
   /* ---------------- LOAD LOCAL ZONES ---------------- */
   const [zones, setZones] = useState(() => {
-    const saved = localStorage.getItem("riskZones");
+    const saved = localStorage.getItem("riskZones_v3");
     if (saved) {
       const parsed = JSON.parse(saved);
       // If old format (no city field), discard and use updated defaultZones
       if (parsed.length > 0 && parsed[0].city === undefined) {
-        localStorage.setItem("riskZones", JSON.stringify(defaultZones));
+        localStorage.setItem("riskZones_v3", JSON.stringify(defaultZones));
         return defaultZones;
       }
       return parsed;
@@ -68,8 +134,26 @@ export default function RiskZones() {
     return defaultZones;
   });
 
+  // Helper function to renumber IDs sequentially
+  const renumberZoneIds = (zoneList) => {
+    return zoneList.map((zone, index) => {
+      // Create new object with id first, then other properties
+      const { id, ...rest } = zone;
+      return {
+        id: index + 1,
+        ...rest
+      };
+    });
+  };
+
   useEffect(() => {
-    localStorage.setItem("riskZones", JSON.stringify(zones));
+    // Renumber IDs before saving
+    const renumberedZones = renumberZoneIds(zones);
+    // Save in single-line format (no pretty printing)
+    localStorage.setItem("riskZones_v3", JSON.stringify(renumberedZones));
+    
+    // Dispatch custom event to notify other components
+    window.dispatchEvent(new CustomEvent("zonesUpdated"));
   }, [zones]);
 
   /* ---------------- BASE / HQ STATE ---------------- */
@@ -142,6 +226,7 @@ export default function RiskZones() {
   /* ---------------- MODE CONTROL ---------------- */
   const [mode, setMode] = useState(null); // "zone" | "addHQ" | "remove" | null
   const [sidebarTab, setSidebarTab] = useState("zones"); // "zones" | "hqs"
+  const [activeTheme, setActiveTheme] = useState("dark"); // Map theme
 
   /* ---------------- NEW ZONE STATE ---------------- */
   const [newPoint, setNewPoint] = useState(null);
@@ -204,6 +289,7 @@ export default function RiskZones() {
 
     setZones((prev) => [...prev, newZone]);
 
+    // Clear the form
     setNewPoint(null);
     setZoneType("");
     setZoneDate(new Date().toISOString().split("T")[0]);
@@ -211,7 +297,7 @@ export default function RiskZones() {
   };
 
   const resetZones = () => {
-    localStorage.removeItem("riskZones");
+    localStorage.removeItem("riskZones_v3");
     setZones(defaultZones);
   };
 
@@ -439,18 +525,42 @@ export default function RiskZones() {
 
         {/* MAP */}
         <div className="flex-1 relative">
+          
+          {/* --- FLOATING THEME PICKER --- */}
+          <div className="absolute top-6 right-6 z-[1000] flex flex-col items-end gap-3">
+            <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-2xl border border-white flex flex-col gap-1">
+              {Object.keys(MAP_THEMES).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTheme(key)}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${
+                    activeTheme === key 
+                      ? "bg-slate-900 text-white shadow-lg" 
+                      : "text-slate-600 hover:bg-slate-200/50"
+                  }`}
+                >
+                  {MAP_THEMES[key].icon}
+                  <span className={activeTheme === key ? "block" : "hidden lg:block"}>
+                    {MAP_THEMES[key].name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <MapContainer
             center={[base.lat, base.lng]}
             zoom={13}
             className="h-full w-full"
           >
+            <MapRecenter center={[base.lat, base.lng]} />
             <MapClickHandler
               mode={mode}
               setNewPoint={setNewPoint}
               setNewHQPoint={setNewHQPoint}
             />
 
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+            <TileLayer url={MAP_THEMES[activeTheme].url} />
 
             {/* ALL HQ MARKERS */}
             {bases.map((hq, idx) => (

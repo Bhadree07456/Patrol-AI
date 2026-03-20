@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import MapView from "../components/MapView";
-import { Shield, Map, Satellite, Moon } from "lucide-react";
+import { Shield } from "lucide-react";
 
 import TN_GOV from "../assets/logo/tn_gov_logo.png";
 import TNSPS from "../assets/logo/TNSPS-nobg.png";
@@ -11,7 +11,7 @@ import { getBaseLocation, subscribeBase } from "../utils/baseLocation";
 
 export default function Dashboard() {
   const [mapStyle, setMapStyle] = useState(
-    localStorage.getItem("mapStyle") || "tactical"
+    localStorage.getItem("mapStyle") || "detail"
   );
   const [base, setBase] = useState(getBaseLocation());
   useEffect(() => {
