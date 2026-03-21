@@ -305,13 +305,21 @@ export default function RouteGenerator() {
             // Skip rendering markers for the start/end points since the main HQ marker is already there
             if (isBase) return null;
 
+            // Random patrol points get a special purple marker
+            const isRandomPatrol = zone.isRandomPatrol;
             const isHighRisk = zone.risk && Number(zone.risk) >= 8;
-            const icon = isHighRisk ? highRiskIcon : routineIcon;
+            const icon = isRandomPatrol 
+              ? createCustomIcon("#9333ea", "#9333ea") // Purple for random patrol
+              : isHighRisk 
+                ? highRiskIcon 
+                : routineIcon;
 
             return (
               <Marker key={`route-${index}-${zone.lat}-${zone.lng}`} position={[zone.lat, zone.lng]} icon={icon}>
                 <Popup>
                   <span className="font-bold">{zone.name || "Patrol Point"}</span>
+                  {isRandomPatrol && <div className="text-xs text-purple-600 mt-1">Random Patrol Point</div>}
+                  {!isRandomPatrol && zone.risk && <div className="text-xs text-slate-600 mt-1">Risk: {zone.risk}</div>}
                 </Popup>
               </Marker>
             );
@@ -340,6 +348,9 @@ export default function RouteGenerator() {
            </div>
            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-600 tracking-wider">
              <div className="w-2.5 h-2.5 rounded-full bg-blue-500" /> ROUTINE
+           </div>
+           <div className="flex items-center gap-2 text-[10px] font-bold text-slate-600 tracking-wider">
+             <div className="w-2.5 h-2.5 rounded-full bg-purple-600" /> PATROL
            </div>
         </div>
       </main>

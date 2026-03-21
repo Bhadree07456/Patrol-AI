@@ -178,6 +178,26 @@ export async function generateSmartRoute(
 
   console.log("Candidates selected:", candidates.length);
 
+  // Add 2-4 random patrol points (not crime zones) for general surveillance
+  const randomPatrolCount = Math.floor(2 + rng() * 3); // 2-4 random points
+  const randomPoints = [];
+  for (let i = 0; i < randomPatrolCount; i++) {
+    const angle = rng() * 2 * Math.PI;
+    const dist = (1 + rng() * (radius - 1)); // Random distance within radius
+    const randomLat = BASE.lat + (dist / 111) * Math.cos(angle);
+    const randomLng = BASE.lng + (dist / (111 * Math.cos(BASE.lat * Math.PI / 180))) * Math.sin(angle);
+    randomPoints.push({
+      id: `random-${i}`,
+      name: `Patrol Point ${i + 1}`,
+      lat: randomLat,
+      lng: randomLng,
+      risk: 0, // Not a crime zone
+      isRandomPatrol: true
+    });
+  }
+  candidates = [...candidates, ...randomPoints];
+  console.log(`Added ${randomPatrolCount} random patrol points`);
+
   // Nearest-neighbour with jitter to vary the path
   let zonesAdded = 0;
   while (candidates.length > 0) {
@@ -210,9 +230,10 @@ export async function generateSmartRoute(
 
     route.push(bestZone);
     markVisited(bestZone);
-    // Note: We keep updateVisitHistory here to ensure variety across clicks 
-    // because it will make these zones less likely to appear in the next 'pool' selection.
-    updateVisitHistory(bestZone.id); 
+    // Only track visit history for actual crime zones (not random patrol points)
+    if (!bestZone.isRandomPatrol) {
+      updateVisitHistory(bestZone.id);
+    }
     
     total += travel;
     current = bestZone;

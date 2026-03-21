@@ -21,6 +21,8 @@ import {
   setActiveBase,
   subscribeBase,
 } from "../utils/baseLocation";
+import { reverseGeocode } from "../utils/geocoder";
+import { fetchZones, addZone, removeZone as dbRemoveZone, updateZoneRisk, resetZones as dbResetZones } from "../lib/db";
 
 /* ---------------- MAP THEMES ---------------- */
 const MAP_THEMES = {
@@ -119,14 +121,13 @@ const baseIcon = new L.divIcon({
 
 /* ---------------- COMPONENT ---------------- */
 export default function RiskZones() {
-  /* ---------------- LOAD LOCAL ZONES ---------------- */
-  const [zones, setZones] = useState(() => {
-    const saved = localStorage.getItem("riskZones_v3");
+  /* ---------------- LOAD ZONES (DB + localStorage fallback) ---------------- */
+  const [zones, setZonesState] = useState(() => {
+    const saved = localStorage.getItem("riskZones_v2");
     if (saved) {
       const parsed = JSON.parse(saved);
-      // If old format (no city field), discard and use updated defaultZones
       if (parsed.length > 0 && parsed[0].city === undefined) {
-        localStorage.setItem("riskZones_v3", JSON.stringify(defaultZones));
+        localStorage.setItem("riskZones_v2", JSON.stringify(defaultZones));
         return defaultZones;
       }
       return parsed;
@@ -134,25 +135,24 @@ export default function RiskZones() {
     return defaultZones;
   });
 
-  // Helper function to renumber IDs sequentially
-  const renumberZoneIds = (zoneList) => {
-    return zoneList.map((zone, index) => {
-      // Create new object with id first, then other properties
-      const { id, ...rest } = zone;
-      return {
-        id: index + 1,
-        ...rest
-      };
-    });
-  };
-
+  // Load from MySQL on mount (falls back to localStorage if backend is down)
   useEffect(() => {
-    // Renumber IDs before saving
-    const renumberedZones = renumberZoneIds(zones);
-    // Save in single-line format (no pretty printing)
-    localStorage.setItem("riskZones_v3", JSON.stringify(renumberedZones));
-    
-    // Dispatch custom event to notify other components
+    fetchZones().then(data => setZonesState(data));
+  }, []);
+
+
+
+  // Helper: renumber IDs with id first
+  const renumberZoneIds = (zoneList) =>
+    zoneList.map((zone, index) => {
+      const { id, ...rest } = zone;
+      return { id: index + 1, ...rest };
+    });
+
+  // Sync to localStorage + dispatch event whenever zones change
+  useEffect(() => {
+    const renumbered = renumberZoneIds(zones);
+    localStorage.setItem("riskZones_v2", JSON.stringify(renumbered));
     window.dispatchEvent(new CustomEvent("zonesUpdated"));
   }, [zones]);
 
@@ -178,17 +178,11 @@ export default function RiskZones() {
   useEffect(() => {
     if (newHQPoint) {
       setPendingHQName("Locating HQ...");
-      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newHQPoint.lat}&lon=${newHQPoint.lng}&format=json`)
-        .then(res => res.json())
-        .then(data => {
-          const address = data.address || {};
-          const place = address.amenity || address.building || address.office || address.suburb || address.neighbourhood || address.city || address.town || address.village || address.road || (data.name ? data.name : (data.display_name ? data.display_name.split(",")[0] : "Central"));
-          setPendingHQName(place + " HQ");
+      reverseGeocode(newHQPoint.lat, newHQPoint.lng)
+        .then(({ district, place }) => {
+          setPendingHQName(`${district} - ${place} HQ`);
         })
-        .catch(err => {
-          console.error("Geocoding failed", err);
-          setPendingHQName("New HQ");
-        });
+        .catch(() => setPendingHQName("New HQ"));
     }
   }, [newHQPoint]);
 
@@ -239,20 +233,15 @@ export default function RiskZones() {
   useEffect(() => {
     if (newPoint) {
       setZonePlace("Locating place...");
-      setZoneCity("Locating city...");
-      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newPoint.lat}&lon=${newPoint.lng}&format=json`)
-        .then(res => res.json())
-        .then(data => {
-          const address = data.address || {};
-          const city = address.city || address.town || address.county || address.state_district || "Unknown City";
-          const place = address.suburb || address.neighbourhood || address.village || address.road || (data.name ? data.name : (data.display_name ? data.display_name.split(",")[0] : "Unknown Place"));
-          setZonePlace(place);
-          setZoneCity(city);
+      setZoneCity("Locating district...");
+      reverseGeocode(newPoint.lat, newPoint.lng)
+        .then(({ district, place }) => {
+          setZoneCity(district);  // district name first (e.g. "Kanyakumari")
+          setZonePlace(place);    // place name second (e.g. "Nagercoil")
         })
-        .catch(err => {
-          console.error("Geocoding failed", err);
+        .catch(() => {
           setZonePlace("Unknown Place");
-          setZoneCity("Unknown City");
+          setZoneCity("Unknown District");
         });
     }
   }, [newPoint]);
@@ -267,29 +256,17 @@ export default function RiskZones() {
   };
 
   const confirmEdit = (id) => {
-    setZones((prev) =>
-      prev.map((z) => (z.id === id ? { ...z, risk: editRisk } : z))
-    );
+    updateZoneRisk(id, editRisk).then(data => setZonesState(data));
     setEditingId(null);
   };
 
   const handleAddZone = () => {
     if (!zoneType || !zoneDate) return;
-
     const newZone = {
-      id: Date.now(),
-      city: zoneCity,
-      name: zonePlace,
-      type: zoneType,
-      lat: newPoint.lat,
-      lng: newPoint.lng,
-      risk: zoneRisk,
-      date: zoneDate,
+      city: zoneCity, name: zonePlace, type: zoneType,
+      lat: newPoint.lat, lng: newPoint.lng, risk: zoneRisk, date: zoneDate,
     };
-
-    setZones((prev) => [...prev, newZone]);
-
-    // Clear the form
+    addZone(newZone).then(data => setZonesState(data));
     setNewPoint(null);
     setZoneType("");
     setZoneDate(new Date().toISOString().split("T")[0]);
@@ -297,12 +274,11 @@ export default function RiskZones() {
   };
 
   const resetZones = () => {
-    localStorage.removeItem("riskZones_v3");
-    setZones(defaultZones);
+    dbResetZones().then(data => setZonesState(data));
   };
 
   const handleRemoveZone = (id) => {
-    setZones((prev) => prev.filter((z) => z.id !== id));
+    dbRemoveZone(id).then(data => setZonesState(data));
   };
 
   /* ---------------- SEARCH ---------------- */
@@ -636,17 +612,22 @@ export default function RiskZones() {
             {/* NEW ZONE FORM */}
             {newPoint && (
               <Popup position={newPoint} onClose={() => setNewPoint(null)}>
-                <div className="space-y-2 w-44">
-                  <div className="px-1 break-words">
-                    <p className="font-bold text-slate-800 text-sm leading-tight">{zonePlace}</p>
-                    <p className="text-[10px] text-slate-500 font-semibold uppercase">{zoneCity}</p>
-                  </div>
-                  
+                <div className="space-y-2 w-52">
+
+                  <p className="text-[10px] text-blue-600 font-black uppercase tracking-wider px-1">{zoneCity}</p>
+
+                  <input
+                    placeholder="Place / Location Name"
+                    value={zonePlace}
+                    onChange={(e) => setZonePlace(e.target.value)}
+                    className="w-full border border-slate-300 p-1 text-sm text-slate-900 font-semibold rounded focus:outline-none focus:border-blue-500"
+                  />
+
                   <input
                     placeholder="Crime Type (e.g. Theft)"
                     value={zoneType}
                     onChange={(e) => setZoneType(e.target.value)}
-                    className="w-full border border-slate-300 p-1 text-sm text-slate-900 rounded focus:outline-blue-500"
+                    className="w-full border border-slate-300 p-1 text-sm text-slate-900 rounded focus:outline-none focus:border-blue-500"
                     autoFocus
                   />
 
@@ -660,7 +641,7 @@ export default function RiskZones() {
                   <select
                     value={zoneRisk}
                     onChange={(e) => setZoneRisk(Number(e.target.value))}
-                    className="w-full border border-slate-300 p-1 text-sm text-slate-900 rounded focus:outline-blue-500"
+                    className="w-full border border-slate-300 p-1 text-sm text-slate-900 rounded focus:outline-none focus:border-blue-500"
                   >
                     <option value={9}>Critical (9)</option>
                     <option value={6}>Elevated (6)</option>

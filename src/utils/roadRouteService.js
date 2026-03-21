@@ -33,7 +33,6 @@ export async function getRoadRoute(coordinates) {
         console.error("❌ ORS API error:", res.status, res.statusText);
         throw new Error(`API returned ${res.status}`);
       }
-
       const data = await res.json();
 
       if (!data.features || !data.features[0]) {
